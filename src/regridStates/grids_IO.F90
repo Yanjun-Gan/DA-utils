@@ -16,8 +16,11 @@
  integer, public, parameter  :: vtype_water=0, & ! TO DO - which veg classification is this?
                                 vtype_landice=15 ! used for soil mask
  ! mask values for soilsnow_mask calculated in the GSI EnKF
- integer, public, parameter  :: mtype_water=0, &
-                                mtype_snow=2
+ integer, public, parameter  :: mtype_water=0,  &
+                                mtype_land=1,   &
+                                mtype_snow1=-1, &
+                                mtype_snow2=-2, &
+                                mtype_snow3=-3
  type, public  :: grid_setup_type
         character(7)   :: descriptor
         character(100) :: fname
@@ -40,13 +43,14 @@
 !-----------------------------------
 ! Create ESMF grid objects, with mask if requested
 
- subroutine setup_grid(localpet, npets, grid_setup, mod_grid )
+ subroutine setup_grid(localpet, npets, variable, grid_setup, mod_grid)
 
  implicit none
 
  ! INTENT IN
  type(grid_setup_type), intent(in)    :: grid_setup
  integer, intent(in)            :: localpet, npets
+ character(len=15), intent(in)   :: variable
 
  ! INTENT OUT
  type(esmf_grid)                :: mod_grid
@@ -56,7 +60,7 @@
  real(esmf_kind_r8), pointer    :: ptr_maskvar(:,:)
  integer(esmf_kind_i4), pointer :: ptr_mask(:,:)
 
- integer                        :: ierr, ncid, tile
+ integer                        :: v, ierr, ncid, tile
 
 !--------------------------
 ! Create grid object, and set up pet distribution
@@ -111,11 +115,30 @@
  ptr_mask = 1 ! initialize land everywhere
  select case (trim(grid_setup%mask_variable(1)))
  case("vegetation_type") ! removing non-land and glaciers using veg class
-     where (nint(ptr_maskvar) == vtype_water )   ptr_mask = 0 ! exclude water
-     where (nint(ptr_maskvar) == vtype_landice ) ptr_mask = 0 ! exclude glaciers
- case("soilsnow_mask") ! removing snow and non-land using pre-computed mask
-     where (nint(ptr_maskvar) == mtype_water )   ptr_mask = 0 ! exclude non-soil
-     where (nint(ptr_maskvar) == mtype_snow ) ptr_mask = 0 ! exclude snow
+    where (nint(ptr_maskvar) == vtype_water)   ptr_mask = 0 ! exclude water
+    where (nint(ptr_maskvar) == vtype_landice) ptr_mask = 0 ! exclude glaciers
+ case("soilsnow_mask") ! removing non-snow land and non-land using pre-computed mask
+    where (nint(ptr_maskvar) == mtype_water)   ptr_mask = 0 ! exclude water/glaciers
+    select case (trim(variable))
+       case ("soilt1_inc","soilt2_inc","soilt3_inc","soilt4_inc","slc1_inc","slc2_inc","slc3_inc","slc4_inc")
+          where (nint(ptr_maskvar) == mtype_snow1) ptr_mask = 0 ! exclude 1-layer snow
+          where (nint(ptr_maskvar) == mtype_snow2) ptr_mask = 0 ! exclude 2-layer snow
+          where (nint(ptr_maskvar) == mtype_snow3) ptr_mask = 0 ! exclude 3-layer snow
+       case ("snowt1_inc")
+          where (nint(ptr_maskvar) == mtype_land)  ptr_mask = 0 ! exclude snow-free land
+          where (nint(ptr_maskvar) == mtype_snow2) ptr_mask = 0 ! exclude 2-layer snow
+          where (nint(ptr_maskvar) == mtype_snow3) ptr_mask = 0 ! exclude 3-layer snow
+       case ("snowt2_inc")
+          where (nint(ptr_maskvar) == mtype_land)  ptr_mask = 0 ! exclude snow-free land
+          where (nint(ptr_maskvar) == mtype_snow1) ptr_mask = 0 ! exclude 1-layer snow
+          where (nint(ptr_maskvar) == mtype_snow3) ptr_mask = 0 ! exclude 3-layer snow
+       case ("snowt3_inc")
+          where (nint(ptr_maskvar) == mtype_land)  ptr_mask = 0 ! exclude snow-free land
+          where (nint(ptr_maskvar) == mtype_snow1) ptr_mask = 0 ! exclude 1-layer snow
+          where (nint(ptr_maskvar) == mtype_snow2) ptr_mask = 0 ! exclude 2-layer snow
+       case default
+          print*, "Warning: No such variable - ", trim(variable)
+    end select
  case default
     call error_handler("unknown mask_variable", 1)
  end select
