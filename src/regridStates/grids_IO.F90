@@ -13,11 +13,6 @@
  private
 
  integer, public, parameter  :: n_tiles=6 ! number tiles in fv3 grid
- integer, public, parameter  :: vtype_water=0, & ! TO DO - which veg classification is this?
-                                vtype_landice=15 ! used for soil mask
- ! mask values for soilsnow_mask calculated in the GSI EnKF
- integer, public, parameter  :: mtype_water=0, &
-                                mtype_snow=2
  type, public  :: grid_setup_type
         character(7)   :: descriptor
         character(100) :: fname
@@ -40,7 +35,7 @@
 !-----------------------------------
 ! Create ESMF grid objects, with mask if requested
 
- subroutine setup_grid(localpet, npets, grid_setup, mod_grid )
+ subroutine setup_grid(localpet, npets, grid_setup, mod_grid)
 
  implicit none
 
@@ -50,13 +45,6 @@
 
  ! INTENT OUT
  type(esmf_grid)                :: mod_grid
-
- ! LOCAL
- type(esmf_field)               :: mask_field(1,1)
- real(esmf_kind_r8), pointer    :: ptr_maskvar(:,:)
- integer(esmf_kind_i4), pointer :: ptr_mask(:,:)
-
- integer                        :: ierr, ncid, tile
 
 !--------------------------
 ! Create grid object, and set up pet distribution
@@ -69,61 +57,6 @@
  case default
      call error_handler("unknown grid_setup%descriptor in setup_grid", 1)
  end select
-
-!--------------------------
-! Calculate and add the mask
-
- mask_field(1,1) = ESMF_FieldCreate(mod_grid, &
-                                   typekind=ESMF_TYPEKIND_R8, &
-                                   staggerloc=ESMF_STAGGERLOC_CENTER, &
-                                   name="input variable for mask", &
-                                   rc=ierr)
- if(ESMF_logFoundError(rcToCheck=ierr,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
-    call error_handler("IN FieldCreate, mask_variable", ierr)
-
- call read_into_fields(localpet, grid_setup%ires, grid_setup%jres, trim(grid_setup%fname_mask), &
-                         trim(grid_setup%dir_mask), grid_setup, 1, &
-                         grid_setup%mask_variable(1), mask_field(1,1))
-
-! get pointer to mask
- call ESMF_FieldGet(mask_field(1,1), &
-                    farrayPtr=ptr_maskvar, &
-                    rc=ierr)
- if(ESMF_logFoundError(rcToCheck=ierr,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
-    call error_handler("IN FieldGet", ierr)
-
-! create and get pointer to the mask
- call ESMF_GridAddItem(mod_grid, &
-                       itemflag=ESMF_GRIDITEM_MASK, &
-                       staggerloc=ESMF_STAGGERLOC_CENTER, &
-                       rc=ierr)
- if(ESMF_logFoundError(rcToCheck=ierr,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
-    call error_handler("in GridAddItem mask", ierr)
-
- call ESMF_GridGetItem(mod_grid, &
-                       itemflag=ESMF_GRIDITEM_MASK, &
-                       farrayPtr=ptr_mask, &
-                       rc=ierr)
- if(ESMF_logFoundError(rcToCheck=ierr,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
-    call error_handler("in GridGetItem mask", ierr)
-
-! calculate the mask
- ptr_mask = 1 ! initialize land everywhere
- select case (trim(grid_setup%mask_variable(1)))
- case("vegetation_type") ! removing non-land and glaciers using veg class
-     where (nint(ptr_maskvar) == vtype_water )   ptr_mask = 0 ! exclude water
-     where (nint(ptr_maskvar) == vtype_landice ) ptr_mask = 0 ! exclude glaciers
- case("soilsnow_mask") ! removing snow and non-land using pre-computed mask
-     where (nint(ptr_maskvar) == mtype_water )   ptr_mask = 0 ! exclude non-soil
-     where (nint(ptr_maskvar) == mtype_snow ) ptr_mask = 0 ! exclude snow
- case default
-    call error_handler("unknown mask_variable", 1)
- end select
-
-! destroy mask field
- call ESMF_FieldDestroy(mask_field(1,1),rc=ierr)
- if(ESMF_logFoundError(rcToCheck=ierr,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
-    call error_handler("DESTROYING FIELD", ierr)
 
  end subroutine setup_grid
 
